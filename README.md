@@ -202,7 +202,3 @@ python -m compileall src tests bot.py
 pytest
 docker compose build
 ```
-
-## Repository Hygiene
-
-Never commit `.env`, `.venv`, IDE folders, caches, or generated package metadata. Commit `.env.example` instead.
