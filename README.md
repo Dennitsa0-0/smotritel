@@ -9,7 +9,7 @@ Companion project: [Dennitsa0-0/Radar_Bot](https://github.com/Dennitsa0-0/Radar_
 
 Smotritel - легковесный async DevOps-информер для Linux-серверов. Он показывает состояние хоста, Docker-контейнеры, логи, перезапуск контейнеров и разбан Fail2Ban через Telegram и Discord.
 
-Проект хорошо работает сам по себе, но идеально раскрывается в связке с [Radar Bot](https://github.com/Dennitsa0-0/Radar_Bot.git): Radar Bot может быть внешним наблюдателем и точкой раннего сигнала, а Smotritel - серверным пультом для проверки состояния, чтения логов и быстрых админских действий.
+Проект хорошо работает сам по себе, но идеально раскрывается в связке с [Radar Bot](https://github.com/Dennitsa0-0/Radar_Bot.git): Radar Bot независимо мониторит серверы, сервисы и сайты, регулярно пингует заданные цели и мгновенно сообщает в Telegram и/или Discord, когда они падают или возвращаются онлайн. Smotritel в этой связке становится серверным пультом для проверки состояния, чтения логов и быстрых админских действий.
 
 ### Что умеет
 
@@ -23,12 +23,12 @@ Smotritel - легковесный async DevOps-информер для Linux-с
 
 ### Связка с Radar Bot
 
-Smotritel и Radar Bot лучше рассматривать как пару:
+Smotritel и Radar Bot лучше рассматривать как пару для полного цикла реакции:
 
-- Radar Bot - наблюдение, сигналы, внешняя логика оповещения.
-- Smotritel - проверка сервера, Docker, логи, Fail2Ban и ручные действия администратора.
+- Radar Bot - независимый мониторинг серверов, сервисов и сайтов, регулярные ping-проверки и мгновенные Telegram/Discord-алерты о падении или восстановлении.
+- Smotritel - проверка состояния хоста, Docker, логи, Fail2Ban и ручные действия администратора после алерта.
 
-Практичный сценарий: Radar Bot замечает событие или проблему, оператор открывает Smotritel в Telegram/Discord, проверяет сервер, смотрит контейнеры и логи, при необходимости перезапускает сервис или снимает бан в Fail2Ban.
+Практичный сценарий: Radar Bot сообщает, что сайт, сервис или сервер недоступен; оператор открывает Smotritel в Telegram/Discord, проверяет хост, смотрит контейнеры и логи, при необходимости перезапускает сервис или снимает бан в Fail2Ban. Когда цель снова оживает, Radar Bot присылает recovery-уведомление.
 
 ### Требования
 
@@ -222,7 +222,7 @@ Smotritel распространяется по Smotritel Non-Commercial License
 
 Smotritel is a lightweight async DevOps informer for Linux servers. It exposes host status, Docker containers, logs, container restart controls, and Fail2Ban unban actions through Telegram and Discord.
 
-The project works well on its own, but it is designed to be especially useful together with [Radar Bot](https://github.com/Dennitsa0-0/Radar_Bot.git): Radar Bot can act as the external watcher and early-signal layer, while Smotritel acts as the server control panel for status checks, logs, and quick admin actions.
+The project works well on its own, but it is designed to be especially useful together with [Radar Bot](https://github.com/Dennitsa0-0/Radar_Bot.git): Radar Bot independently monitors servers, services, and websites, regularly pings configured targets, and sends instant Telegram and/or Discord alerts when they go down or come back online. Smotritel then acts as the server control panel for status checks, logs, and quick admin actions.
 
 ### What It Does
 
@@ -236,12 +236,12 @@ The project works well on its own, but it is designed to be especially useful to
 
 ### Working With Radar Bot
 
-Smotritel and Radar Bot are best treated as a pair:
+Smotritel and Radar Bot are best treated as a full response loop:
 
-- Radar Bot - monitoring, signals, and external alert logic.
-- Smotritel - server status, Docker, logs, Fail2Ban, and manual admin actions.
+- Radar Bot - independent monitoring for servers, services, and websites, with regular ping checks and instant Telegram/Discord down-and-recovery alerts.
+- Smotritel - host status, Docker, logs, Fail2Ban, and manual admin actions after an alert.
 
-A practical flow: Radar Bot notices an event or a problem, the operator opens Smotritel in Telegram/Discord, checks the server, reviews containers and logs, then restarts a service or unbans an IP when needed.
+A practical flow: Radar Bot reports that a website, service, or server is down; the operator opens Smotritel in Telegram/Discord, checks the host, reviews containers and logs, then restarts a service or unbans an IP when needed. When the target is healthy again, Radar Bot sends the recovery notification.
 
 ### Requirements
 
