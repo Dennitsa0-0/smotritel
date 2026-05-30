@@ -10,7 +10,15 @@ from discord import app_commands
 from smotritel.config import Settings
 from smotritel.core import ContainerStatus, DockerProvider, Fail2BanProvider, SystemMonitor, parse_ip_input
 from smotritel.i18n import Localization
-from smotritel.platforms.formatting import format_container_lines, format_provider_result, format_system_status_text
+from smotritel.platforms.formatting import (
+    DISCORD_SELECT_PAGE_SIZE,
+    container_at_page_index,
+    container_page,
+    format_container_lines,
+    format_provider_result,
+    format_system_status_text,
+    sorted_containers,
+)
 
 log = logging.getLogger(__name__)
 
@@ -76,6 +84,9 @@ class DiscordPlatform:
     def _status_title(self, host_name: str) -> str:
         return host_name.strip() or self.i18n.get("server_fallback")
 
+    async def _get_sorted_containers(self) -> list[ContainerStatus]:
+        return sorted_containers(await self.docker.get_containers_status())
+
     def _register(self) -> None:
         @self.client.event
         async def on_ready() -> None:
@@ -108,9 +119,12 @@ class DiscordPlatform:
                 await interaction.response.send_message("Slow down a little.", ephemeral=True)
                 return
             try:
-                containers = await self.docker.get_containers_status()
+                containers = await self._get_sorted_containers()
             except Exception as exc:
                 await interaction.response.send_message(f"{self.i18n.get('docker_error')}: {exc}", ephemeral=True)
+                return
+            if not containers:
+                await interaction.response.send_message(self.i18n.get("docker_empty"), ephemeral=True)
                 return
             color = 0x00FF00 if all(c.is_healthy for c in containers) else 0xFF0000
             embed = discord.Embed(title="Docker", description=format_container_lines(containers), color=color)
@@ -144,30 +158,109 @@ class DiscordPlatform:
 
 
 class DockerView(discord.ui.View):
-    def __init__(self, platform: DiscordPlatform, containers: list[ContainerStatus]) -> None:
+    def __init__(self, platform: DiscordPlatform, containers: list[ContainerStatus], page: int = 0) -> None:
         super().__init__(timeout=120)
         self.platform = platform
-        for container in containers[:5]:
-            self.add_item(_DockerLogsButton(platform, container.name))
-            self.add_item(_DockerRestartButton(platform, container.name))
+        page_items, current_page, total_pages = container_page(containers, page, DISCORD_SELECT_PAGE_SIZE)
+        self.add_item(_DockerSelect(platform, page_items, current_page))
+        if total_pages > 1:
+            self.add_item(_DockerPageButton(platform, "<", max(0, current_page - 1)))
+            self.add_item(_DockerPageButton(platform, ">", min(total_pages - 1, current_page + 1)))
         self.add_item(_F2BUnbanAllButton(platform))
 
 
-class _DockerLogsButton(discord.ui.Button):
-    def __init__(self, platform: DiscordPlatform, container_name: str) -> None:
-        super().__init__(label=f"Logs: {container_name}", style=discord.ButtonStyle.secondary)
+class _DockerSelect(discord.ui.Select):
+    def __init__(self, platform: DiscordPlatform, containers: list[ContainerStatus], page: int) -> None:
+        options = [
+            discord.SelectOption(
+                label=container.name[:100],
+                description=f"{container.status} | {container.uptime}"[:100],
+                value=str(index),
+            )
+            for index, container in enumerate(containers)
+        ]
+        super().__init__(placeholder="Choose a container", min_values=1, max_values=1, options=options)
         self.platform = platform
-        self.container_name = container_name
+        self.page = page
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if not self.platform._is_admin(interaction):
             await interaction.response.send_message(self.platform.i18n.get("access_denied"), ephemeral=True)
             return
-        if not self.platform.rate_limiter.allow(interaction.user.id, f"docker_logs:{self.container_name}"):
+        if not self.platform.rate_limiter.allow(interaction.user.id, "docker_select"):
             await interaction.response.send_message("Slow down a little.", ephemeral=True)
             return
         try:
-            logs = await self.platform.docker.get_container_logs(self.container_name)
+            containers = await self.platform._get_sorted_containers()
+        except Exception as exc:
+            await interaction.response.send_message(f"{self.platform.i18n.get('docker_error')}: {exc}", ephemeral=True)
+            return
+        container = container_at_page_index(
+            containers,
+            self.page,
+            int(self.values[0]),
+            DISCORD_SELECT_PAGE_SIZE,
+        )
+        if container is None:
+            await interaction.response.send_message(self.platform.i18n.get("docker_empty"), ephemeral=True)
+            return
+        embed = discord.Embed(
+            title=container.name,
+            description=f"{container.status} | {container.uptime}",
+            color=0x00FF00 if container.is_healthy else 0xFF0000,
+        )
+        await interaction.response.edit_message(embed=embed, view=DockerContainerView(self.platform, self.page, int(self.values[0])))
+
+
+class _DockerPageButton(discord.ui.Button):
+    def __init__(self, platform: DiscordPlatform, label: str, page: int) -> None:
+        super().__init__(label=label, style=discord.ButtonStyle.secondary)
+        self.platform = platform
+        self.page = page
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if not self.platform._is_admin(interaction):
+            await interaction.response.send_message(self.platform.i18n.get("access_denied"), ephemeral=True)
+            return
+        try:
+            containers = await self.platform._get_sorted_containers()
+        except Exception as exc:
+            await interaction.response.send_message(f"{self.platform.i18n.get('docker_error')}: {exc}", ephemeral=True)
+            return
+        color = 0x00FF00 if all(c.is_healthy for c in containers) else 0xFF0000
+        embed = discord.Embed(title="Docker", description=format_container_lines(containers), color=color)
+        await interaction.response.edit_message(embed=embed, view=DockerView(self.platform, containers, self.page))
+
+
+class DockerContainerView(discord.ui.View):
+    def __init__(self, platform: DiscordPlatform, page: int, index: int) -> None:
+        super().__init__(timeout=120)
+        self.add_item(_DockerLogsButton(platform, page, index))
+        self.add_item(_DockerRestartButton(platform, page, index))
+        self.add_item(_DockerBackButton(platform, page))
+
+
+class _DockerLogsButton(discord.ui.Button):
+    def __init__(self, platform: DiscordPlatform, page: int, index: int) -> None:
+        super().__init__(label="Logs", style=discord.ButtonStyle.secondary)
+        self.platform = platform
+        self.page = page
+        self.index = index
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if not self.platform._is_admin(interaction):
+            await interaction.response.send_message(self.platform.i18n.get("access_denied"), ephemeral=True)
+            return
+        if not self.platform.rate_limiter.allow(interaction.user.id, f"docker_logs:{self.page}:{self.index}"):
+            await interaction.response.send_message("Slow down a little.", ephemeral=True)
+            return
+        try:
+            containers = await self.platform._get_sorted_containers()
+            container = container_at_page_index(containers, self.page, self.index, DISCORD_SELECT_PAGE_SIZE)
+            if container is None:
+                await interaction.response.send_message(self.platform.i18n.get("docker_empty"), ephemeral=True)
+                return
+            logs = await self.platform.docker.get_container_logs(container.name)
         except Exception as exc:
             await interaction.response.send_message(f"{self.platform.i18n.get('docker_error')}: {exc}", ephemeral=True)
             return
@@ -175,20 +268,50 @@ class _DockerLogsButton(discord.ui.Button):
 
 
 class _DockerRestartButton(discord.ui.Button):
-    def __init__(self, platform: DiscordPlatform, container_name: str) -> None:
-        super().__init__(label=f"Restart: {container_name}", style=discord.ButtonStyle.danger)
+    def __init__(self, platform: DiscordPlatform, page: int, index: int) -> None:
+        super().__init__(label="Restart", style=discord.ButtonStyle.danger)
         self.platform = platform
-        self.container_name = container_name
+        self.page = page
+        self.index = index
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if not self.platform._is_admin(interaction):
             await interaction.response.send_message(self.platform.i18n.get("access_denied"), ephemeral=True)
             return
-        if not self.platform.rate_limiter.allow(interaction.user.id, f"docker_restart:{self.container_name}"):
+        if not self.platform.rate_limiter.allow(interaction.user.id, f"docker_restart:{self.page}:{self.index}"):
             await interaction.response.send_message("Slow down a little.", ephemeral=True)
             return
-        result = await self.platform.docker.restart_container(self.container_name)
+        try:
+            containers = await self.platform._get_sorted_containers()
+        except Exception as exc:
+            await interaction.response.send_message(f"{self.platform.i18n.get('docker_error')}: {exc}", ephemeral=True)
+            return
+        container = container_at_page_index(containers, self.page, self.index, DISCORD_SELECT_PAGE_SIZE)
+        if container is None:
+            await interaction.response.send_message(self.platform.i18n.get("docker_empty"), ephemeral=True)
+            return
+        result = await self.platform.docker.restart_container(container.name)
         await interaction.response.send_message(format_provider_result(result), ephemeral=True)
+
+
+class _DockerBackButton(discord.ui.Button):
+    def __init__(self, platform: DiscordPlatform, page: int) -> None:
+        super().__init__(label="Back", style=discord.ButtonStyle.secondary)
+        self.platform = platform
+        self.page = page
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if not self.platform._is_admin(interaction):
+            await interaction.response.send_message(self.platform.i18n.get("access_denied"), ephemeral=True)
+            return
+        try:
+            containers = await self.platform._get_sorted_containers()
+        except Exception as exc:
+            await interaction.response.send_message(f"{self.platform.i18n.get('docker_error')}: {exc}", ephemeral=True)
+            return
+        color = 0x00FF00 if all(c.is_healthy for c in containers) else 0xFF0000
+        embed = discord.Embed(title="Docker", description=format_container_lines(containers), color=color)
+        await interaction.response.edit_message(embed=embed, view=DockerView(self.platform, containers, self.page))
 
 
 class _F2BUnbanAllButton(discord.ui.Button):
