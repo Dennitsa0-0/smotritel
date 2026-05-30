@@ -429,7 +429,3 @@ docker compose build
 Smotritel is source-available under the Smotritel Non-Commercial License 1.0.
 
 You may copy, modify, and distribute the code for non-commercial use. You may not sell it, charge for access to it, or use it as part of a paid product, paid service, SaaS offering, consulting deliverable, or other commercial activity without prior written permission.
-
-## Repository Hygiene
-
-Never commit `.env`, `.venv`, IDE folders, caches, or generated package metadata. Commit `.env.example` instead.
