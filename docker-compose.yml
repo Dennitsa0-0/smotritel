@@ -1,0 +1,17 @@
+version: "3.8"
+
+services:
+  smotritel:
+    build: .
+    container_name: Smotritel
+    restart: unless-stopped
+    env_file:
+      - .env
+    pid: "host"
+    network_mode: "host"
+    volumes:
+      - /:/hostfs:ro
+      # Docker restart support requires write access to the host Docker socket.
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+      # Fail2Ban commands are sent directly over the host Unix socket.
+      - /var/run/fail2ban/fail2ban.sock:/var/run/fail2ban/fail2ban.sock:rw
